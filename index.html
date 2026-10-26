@@ -239,21 +239,25 @@
 
             // Global Calculate & Allocate Racks (Brute Force Optimization)
             const { totalAmps, optimalAllocation, impossible } = useMemo(() => {
-                let slTotalAmps = 0;
-                let standardTotalAmps = 0;
+                let d90OnlyAmps = 0;
+                let slSeriesAmps = 0;
+                let standardAmps = 0;
 
                 sources.forEach(src => {
                     const req = getSourceRequirements(src);
-                    const isSLFamily = CABINETS.SL_SERIES.includes(src.cabinet) || src.cabinet === 'SL-SUB';
+                    const isD90Only = src.cabinet === 'SL-SUB' || src.cabinet === 'M2';
+                    const isSLTop = CABINETS.SL_SERIES.includes(src.cabinet);
                     
-                    if (isSLFamily) {
-                        slTotalAmps += req.ampsRequired;
+                    if (isD90Only) {
+                        d90OnlyAmps += req.ampsRequired;
+                    } else if (isSLTop) {
+                        slSeriesAmps += req.ampsRequired;
                     } else {
-                        standardTotalAmps += req.ampsRequired;
+                        standardAmps += req.ampsRequired;
                     }
                 });
                 
-                const total = slTotalAmps + standardTotalAmps;
+                const total = d90OnlyAmps + slSeriesAmps + standardAmps;
                 
                 if (total === 0) return { totalAmps: 0, optimalAllocation: null, impossible: false };
 
@@ -266,12 +270,20 @@
                         for (let d2 = 0; d2 <= INVENTORY.d20_3.available; d2++) {
                             for (let d1 = 0; d1 <= INVENTORY.d20_1.available; d1++) {
                                 
-                                const slCapacity = (d4 * 6) + (d9 * 3);
-                                const totalCapacity = slCapacity + (d2 * 3) + (d1 * 1);
+                                const d90Capacity = d9 * INVENTORY.d90_3.capacity;
+                                const d40Capacity = d4 * INVENTORY.d40_6.capacity;
+                                const d20Capacity = (d2 * INVENTORY.d20_3.capacity) + (d1 * INVENTORY.d20_1.capacity);
+                                const totalCapacity = d90Capacity + d40Capacity + d20Capacity;
                                 
-                                // Crucial Fix: Ensure SL capacity can cover SL needs, and total covers total needs.
-                                // D20s can NEVER contribute to the slCapacity.
-                                if (slCapacity >= slTotalAmps && totalCapacity >= total) {
+                                // Rule 1: D90-only boxes (SL-SUB, M2) must have enough D90 capacity
+                                if (d90Capacity < d90OnlyAmps) continue;
+                                
+                                // Rule 2: SL-Series tops can use D40 or remaining D90 capacity. 
+                                // (Combined D90 + D40 capacity must cover both D90-only AND SL tops)
+                                if ((d90Capacity + d40Capacity) < (d90OnlyAmps + slSeriesAmps)) continue;
+                                
+                                // Rule 3: Total capacity must cover all boxes
+                                if (totalCapacity >= total) {
                                     const waste = totalCapacity - total;
                                     const numRacks = d4 + d9 + d2 + d1;
                                     
