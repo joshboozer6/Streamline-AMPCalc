@@ -239,7 +239,21 @@
 
             // Global Calculate & Allocate Racks (Brute Force Optimization)
             const { totalAmps, optimalAllocation, impossible } = useMemo(() => {
-                const total = sources.reduce((sum, src) => sum + getSourceRequirements(src).ampsRequired, 0);
+                let slTotalAmps = 0;
+                let standardTotalAmps = 0;
+
+                sources.forEach(src => {
+                    const req = getSourceRequirements(src);
+                    const isSLFamily = CABINETS.SL_SERIES.includes(src.cabinet) || src.cabinet === 'SL-SUB';
+                    
+                    if (isSLFamily) {
+                        slTotalAmps += req.ampsRequired;
+                    } else {
+                        standardTotalAmps += req.ampsRequired;
+                    }
+                });
+                
+                const total = slTotalAmps + standardTotalAmps;
                 
                 if (total === 0) return { totalAmps: 0, optimalAllocation: null, impossible: false };
 
@@ -252,10 +266,13 @@
                         for (let d2 = 0; d2 <= INVENTORY.d20_3.available; d2++) {
                             for (let d1 = 0; d1 <= INVENTORY.d20_1.available; d1++) {
                                 
-                                const capacity = (d4 * 6) + (d9 * 3) + (d2 * 3) + (d1 * 1);
+                                const slCapacity = (d4 * 6) + (d9 * 3);
+                                const totalCapacity = slCapacity + (d2 * 3) + (d1 * 1);
                                 
-                                if (capacity >= total) {
-                                    const waste = capacity - total;
+                                // Crucial Fix: Ensure SL capacity can cover SL needs, and total covers total needs.
+                                // D20s can NEVER contribute to the slCapacity.
+                                if (slCapacity >= slTotalAmps && totalCapacity >= total) {
+                                    const waste = totalCapacity - total;
                                     const numRacks = d4 + d9 + d2 + d1;
                                     
                                     // Scoring logic: Minimize wasted channels first, then rack count, tie break on D90
